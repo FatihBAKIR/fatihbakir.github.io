@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="https://blog.fatihbakir.net/feed.xml" rel="self" type="application/atom+xml" /><link href="https://blog.fatihbakir.net/" rel="alternate" type="text/html" /><updated>2019-05-13T22:38:34-07:00</updated><id>https://blog.fatihbakir.net/feed.xml</id><title type="html">Fatih’s blog</title><subtitle>Blog </subtitle><entry><title type="html">Please do not disturb</title><link href="https://blog.fatihbakir.net/2019/05/13/dont-disturb.html" rel="alternate" type="text/html" title="Please do not disturb" /><published>2019-05-13T00:00:00-07:00</published><updated>2019-05-13T00:00:00-07:00</updated><id>https://blog.fatihbakir.net/2019/05/13/dont-disturb</id><content type="html" xml:base="https://blog.fatihbakir.net/2019/05/13/dont-disturb.html">&lt;p&gt;Just like regular operating systems, embedded OSes have multiple responsibilities. First, they have to execute user programs. And second, they need to manage IO. IO usually doesn’t execute instantaneously, it takes some time. Some time we’d rather spend executing user code rather than just waiting for IO to complete. The external devices are usually smart enough to run on their own and just &lt;em&gt;interrupt&lt;/em&gt; the compiler when they need something. So, upon an IO request by a thread, we just initiate an IO operation on the hardware and block the thread until IO finishes. If there are other threads to execute, we’ll just do that.&lt;/p&gt;
+
+&lt;p&gt;However, interrupts act like preemptive threads. Meaning, at any point in a program, we might get preempted by an interrupt service routine. Although ISRs and the normal thread world should be as decoupled as possible, at some point, some data will be shared between them. This easily leads to difficult to track down race conditions.&lt;/p&gt;
+
+&lt;p&gt;The most obvious resource ISRs and the &lt;em&gt;normal&lt;/em&gt; world share is the thread queues. There’s a queue of runnable threads in a system that the scheduler uses, called the run queue. When a thread is created, it’s placed on that queue so it can start executing. When a thread starts executing, it’s taken off that list. When a thread blocks, it’s placed in the wait queue of whatever it’s blocking on. The threads in a block queue is usually placed back into the run queue by an interrupt service routine. For instance, when you’re sleeping for 5 seconds, you’re waiting for an ISR to wake you up by placing you back to the run queue eventually.&lt;/p&gt;
+
+&lt;p&gt;Now, imagine a moment where a task starts attempts to block on a resource, called &lt;script type=&quot;math/tex&quot;&gt;R_x&lt;/script&gt; at time &lt;script type=&quot;math/tex&quot;&gt;T_1&lt;/script&gt; and it takes &lt;script type=&quot;math/tex&quot;&gt;t&lt;/script&gt; time to finish placing the thread in the block queue and suspend it. There exists an ISR &lt;script type=&quot;math/tex&quot;&gt;I_x&lt;/script&gt; that unblocks threads waiting on &lt;script type=&quot;math/tex&quot;&gt;R_x&lt;/script&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/img/img1.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;It is possible that &lt;script type=&quot;math/tex&quot;&gt;I_x&lt;/script&gt; will be serviced during &lt;script type=&quot;math/tex&quot;&gt;[T_1, T_1 + t)&lt;/script&gt;. In that case, we’ll have a nice race condition and quickly go into the undefined behavior land.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/img/img2.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;To avoid such a problem, we disable interrupts before placing a thread in the wait queue of a resource and enable them back right after placing it in the queue.&lt;/p&gt;
+
+&lt;h2 id=&quot;death-by-a-thousand-interrupt-disables&quot;&gt;Death by a thousand interrupt disables&lt;/h2&gt;
+
+&lt;p&gt;That solves our little problem. However, it turns out that you don’t want to always block unconditionally. You want to check if a condition has been satisfied and if not, block until it does. This is exactly what a &lt;em&gt;semaphore&lt;/em&gt; represents:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;semaphore&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bytes_received&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ring_buf&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;32&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;read_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(){&lt;/span&gt;
+	&lt;span class=&quot;n&quot;&gt;bytes_received&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;down&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;auto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;front&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+	&lt;span class=&quot;n&quot;&gt;bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pop_front&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;When &lt;code class=&quot;highlighter-rouge&quot;&gt;read_byte&lt;/code&gt; is called, we don’t necessarily want to block. If there already exists some bytes in the buffer, we want to take the first one. If there’s none, we want to wait until some arrives.&lt;/p&gt;
+
+&lt;p&gt;Now, to check how many bytes there are in the buffer, we have to read a shared integer. To do so, we must disable interrupts. This is in the &lt;code class=&quot;highlighter-rouge&quot;&gt;down&lt;/code&gt; function of semaphores, and looks like this basically:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;semaphore&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;down&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;int_guard&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ig&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;count&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+	    &lt;span class=&quot;n&quot;&gt;m_wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;Now, we disable interrupts once in the &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt;. Then, we call &lt;code class=&quot;highlighter-rouge&quot;&gt;wait&lt;/code&gt; on the &lt;code class=&quot;highlighter-rouge&quot;&gt;m_wait&lt;/code&gt; object, which is of type &lt;code class=&quot;highlighter-rouge&quot;&gt;waitable&lt;/code&gt;. &lt;code class=&quot;highlighter-rouge&quot;&gt;waitable&lt;/code&gt;s are basically just a wrapper around a queue of threads that present an easier interface, like a &lt;code class=&quot;highlighter-rouge&quot;&gt;wait&lt;/code&gt; function rather than &lt;code class=&quot;highlighter-rouge&quot;&gt;emplace_back(current_thread)&lt;/code&gt; and suspend.&lt;/p&gt;
+
+&lt;p&gt;But, as we talked about previously, blocking also needs to disable interrupts. So, it’ll construct another &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt; object before placing the thread into the wait queue.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/img/img3.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;After that, we have to suspend the current thread, which means switching context to another thread. However, context switching is another potentially dangerous function. So interrupts must be disabled during that time as well.&lt;/p&gt;
+
+&lt;p&gt;So, for just a &lt;code class=&quot;highlighter-rouge&quot;&gt;semaphore::down&lt;/code&gt; call, we have to disable interrupts 3 times. This is called the abstraction penalty. Since we obviously don’t want to pay this cost, we’ll cut some corners in terms of safety. For instance, the last call, &lt;code class=&quot;highlighter-rouge&quot;&gt;suspend_self&lt;/code&gt; will have a precondition:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cm&quot;&gt;/**  
+ * Gives control of the CPU back to the scheduler, 
+ * suspending * the current thread.  
+ * If the interrupts are not disabled when this function 
+ * is called, the behaviour is undefined 
+ */&lt;/span&gt;
+ &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;suspend_self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;  
+ &lt;span class=&quot;c1&quot;&gt;// pre-condition: interrupts must be disabled&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;So, we’ve just traded performance for safety. Now, our code has UB if we attempt to suspend the current thread without disabling interrupts. Now, this function isn’t meant to be called directly, so the dangers aren’t that high, but still, there’s some unsafety and we still call the interrupt disable/enable pair twice.&lt;/p&gt;
+
+&lt;p&gt;You might be wondering how we can actually disable and enable interrupts twice. The hardware doesn’t know how many times you’ve disabled interrupts after all. There are 2 ways you can go about that: either store the current interrupt information in the &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt; object and restore it upon enabling, or count how many times we’ve disabled interrupts, and only enable them back when the counter reaches 0. The former solution is more &lt;em&gt;pure&lt;/em&gt;, but the latter has $O(1)$ storage cost, so that’s the way we go about it. However, either method imposes some non-trivial runtime overhead, so I’d rather not to that twice.&lt;/p&gt;
+
+&lt;p&gt;Ideally, I could mark functions as &lt;em&gt;no interrupts&lt;/em&gt; like we do with &lt;code class=&quot;highlighter-rouge&quot;&gt;const&lt;/code&gt; or &lt;code class=&quot;highlighter-rouge&quot;&gt;noexcept&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;waitable&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;suspend_self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And the compiler just statically checks whether I’m calling from a non-interruptible context. However, this doesn’t scale as I can just come up with more stuff that fits this criteria.&lt;/p&gt;
+
+&lt;p&gt;The solution is to use the type system. We’ll introduce a new empty type, and make &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt; inherit from that:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{};&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;int_guard&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And we’ll change any function that expects there to be no interrupts to take a const reference to a &lt;code class=&quot;highlighter-rouge&quot;&gt;no_int&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;waitable&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;suspend_self&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, the C++ compiler will just prevent anyone from calling these functions unless they have an &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt; instance lying around.&lt;/p&gt;
+
+&lt;p&gt;And &lt;code class=&quot;highlighter-rouge&quot;&gt;waitable::wait&lt;/code&gt; just passes it’s reference to &lt;code class=&quot;highlighter-rouge&quot;&gt;suspend_self&lt;/code&gt;, so it’s easy to carry this information down the call stack.&lt;/p&gt;
+
+&lt;p&gt;So, &lt;code class=&quot;highlighter-rouge&quot;&gt;semaphore::down&lt;/code&gt; will just look like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;semaphore&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;down&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;int_guard&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ig&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;count&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+	    &lt;span class=&quot;n&quot;&gt;m_wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;wait&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ig&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;If you aren’t familiar with C++’s inheritance mechanism, this doesn’t add any overhead to functions the compiler inlines. If it can’t inline, it’s equivalent to passing a single reference.&lt;/p&gt;
+
+&lt;p&gt;Awesome! Now, you might say they can just construct a &lt;code class=&quot;highlighter-rouge&quot;&gt;no_int&lt;/code&gt; instance and pass that as well. Well, they shouldn’t. But we have the technology to solve that as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	&lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;friend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;int_guard&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;This way, short of modifying the &lt;code class=&quot;highlighter-rouge&quot;&gt;no_int&lt;/code&gt; type, the users of the library &lt;em&gt;must&lt;/em&gt; use an &lt;code class=&quot;highlighter-rouge&quot;&gt;int_guard&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;theres-another&quot;&gt;There’s another&lt;/h2&gt;
+
+&lt;p&gt;You might be wondering why we’re going to unnecessary lengths and not using a &lt;code class=&quot;highlighter-rouge&quot;&gt;const int_guard&amp;amp;&lt;/code&gt;. The answer is that, there’s another way of disabling interrupts in a system, and the other one is if we are already in an interrupt context (that means we’re already servicing an interrupt)!&lt;/p&gt;
+
+&lt;p&gt;To model this, we add another type:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;namespace&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;detail&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;int_ctx&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;no_int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{};&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;When we enter an ISR, we’ll construct an &lt;code class=&quot;highlighter-rouge&quot;&gt;int_ctx&lt;/code&gt;, and pass that to the functions that expect interrupts to be turned off.&lt;/p&gt;</content><author><name>fatih</name></author><category term="c++" /><category term="embedded" /><category term="os" /><summary type="html">Ensuring atomic behaviour without wasting time</summary></entry><entry><title type="html">SSL considered harmful (in IoT)?</title><link href="https://blog.fatihbakir.net/2019/05/13/ssl-considered-harmful.html" rel="alternate" type="text/html" title="SSL considered harmful (in IoT)?" /><published>2019-05-13T00:00:00-07:00</published><updated>2019-05-13T00:00:00-07:00</updated><id>https://blog.fatihbakir.net/2019/05/13/ssl-considered-harmful</id><content type="html" xml:base="https://blog.fatihbakir.net/2019/05/13/ssl-considered-harmful.html">&lt;p&gt;I’ve been working on &lt;em&gt;Internet of Things&lt;/em&gt; research for over a year now. The bulk of it has been
+working on getting cheap installations to work reliably and securely.&lt;/p&gt;
+
+&lt;p&gt;It’s a known fact that security hasn’t been the top priority of IoT applications, whether it’s a
+temperature sensor, a thermostat or a smart bulb. They get hacked, they become part of botnets,
+and if nothing, they reduce your downtime.&lt;/p&gt;
+
+&lt;p&gt;This is obviously not desirable. These things usually work over WiFi, so TCP/IP. So we should just 
+slap our trusty SSL on top of it and call it a day, right?&lt;/p&gt;
+
+&lt;p&gt;Nope. The main problem many people don’t see is what separates the &lt;em&gt;Internet of Things&lt;/em&gt; from the
+regular internet. On the regular internet, we’ve mostly solved the security problems, and yes, the
+solution is usually just encrypting the traffic. However, this solution just doesn’t scale &lt;em&gt;down&lt;/em&gt;
+to tiny embedded systems that are now part of the same internet as our crazy back end servers. Here,
+the devices are extremely constrained.&lt;/p&gt;
+
+&lt;p&gt;Public key cryptography, which powers our security infrastructure on the internet, is not designed
+to be run on processors with just a tens of megahertz clock speeds and a few KBs of RAM.&lt;/p&gt;
+
+&lt;p&gt;No, they were designed for huge machines. A conforming, bidirectional SSL server &lt;strong&gt;must&lt;/strong&gt; be able
+to keep about 33 kilobytes of buffers. The (relatively high end) microcontroller I’m using 
+frequently only gives me about 48 kilobytes of RAM. So, if I wanted to run a full fledged SSL server
+on it, I must waste two thirds of my RAM. Fortunately, you neither have to conform nor have to run
+an SSL server on these things, so you can get away with about 5-10 KB of RAM for buffers.&lt;/p&gt;
+
+&lt;p&gt;But no, I’m not finished yet. Then we get to the point of actually using these buffers in an actual
+SSL session. Regardless of whether you are a server or a client, you have to perform the dreaded
+SSL handshake. Boy, oh boy. It takes slightly more than 4KB of stack to execute that. If you’re 
+smart and looking for some adventure, you can probably use that wasted memory after the handshake
+for some other purposes, but otherwise, it’ll just lay there after the handshake.&lt;/p&gt;
+
+&lt;p&gt;Oh, there’s also the issue of runtime. A single SSL handshake, on 2048 bit RSA keys will take about
+4 seconds on an ESP8266. And no, ECC doesn’t help too much either.&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Operation&lt;/th&gt;
+      &lt;th&gt;Time&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;RSA Handshake (2048 Bit)&lt;/td&gt;
+      &lt;td&gt;3,95 Seconds&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;RSA Handshake (4096 Bit)&lt;/td&gt;
+      &lt;td&gt;32,32 Seconds&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;I’m not an expert on SSL, but my understanding is that the handshake is bottlenecked at digital
+signature operations. Here are the numbers for those primitives as well:&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Algorithm&lt;/th&gt;
+      &lt;th&gt;Sign Time&lt;/th&gt;
+      &lt;th&gt;Verify Time&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;PKCS1 (2048 Bits)&lt;/td&gt;
+      &lt;td&gt;3280 ms&lt;/td&gt;
+      &lt;td&gt;187 ms&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;PKCS1 (4096 Bits)&lt;/td&gt;
+      &lt;td&gt;31580 ms&lt;/td&gt;
+      &lt;td&gt;9190 ms&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;ECDSA (256 Bits)&lt;/td&gt;
+      &lt;td&gt;214 ms&lt;/td&gt;
+      &lt;td&gt;4340 ms&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Now, 4 seconds isn’t a huge amount of time. My sensors are duty cycled to do a measurement every 5
+minutes and go to sleep. So, running for 4 more extra seconds shouldn’t hurt, right?&lt;/p&gt;
+
+&lt;p&gt;The reason I’m going to sleep is to conserve power. We’re running on batteries here, and a regular
+wake up-sample sensor-publish to cloud/edge-go back to sleep cycle takes about 2 seconds. Now, I just pay
+twice that time just to do an SSL handshake. Oh, did I mention I’m on a WiFi network, which also has
+encryption in the link layer. So, when I’m pushing to the edge, I probably don’t make use of the SSL
+&lt;em&gt;at all&lt;/em&gt;. It’s pure overhead.&lt;/p&gt;
+
+&lt;p&gt;Well, you might say that I don’t have to use SSL, so why complain this much. The reason is that every
+single public cloud provider I’ve used (&lt;a class=&quot;citation&quot; href=&quot;#azure-mqtt-ssl&quot;&gt;[1]&lt;/a&gt;, &lt;a class=&quot;citation&quot; href=&quot;#aws-mqtt-ssl&quot;&gt;[2]&lt;/a&gt;, &lt;a class=&quot;citation&quot; href=&quot;#gc-mqtt-ssl&quot;&gt;[3]&lt;/a&gt;) 
+expects me to publish only and only using SSL over MQTT.&lt;/p&gt;
+
+&lt;p&gt;Now, it’s not their fault. Security in this domain is extremely important. However, maybe porting
+everything we’re used to in the regular internet programming to these constrained devices isn’t
+the greatest idea. SSL (thus public key encryption) is truly a marvellous technology, but it’s solving
+a very specific problem: you want to verify each parties identity * encrypt the communication * don’t 
+want to share a lot of keys ahead of time.&lt;/p&gt;
+
+&lt;p&gt;For my commands to my thermostat, I don’t care a lot about the encryption. As long as I can verify
+the authenticity of commands properly, an attacker cannot change my settings. Similarly for sensing
+applications, if an attacker can’t inject random data to my public cloud database, I don’t really 
+care about the data being encrypted, especially if I’m storing my data in an edge cloud where there
+already exists a layer of security in link layer.&lt;/p&gt;
+
+&lt;p&gt;Maybe it’s time to search for lighter security primitives that can scale down to the embedded systems
+we have to use in this domain. As otherwise, we’ll either not do it properly, or not do it at all.&lt;/p&gt;
+
+&lt;h2 id=&quot;references&quot;&gt;References&lt;/h2&gt;
+
+&lt;ul class=&quot;bibliography&quot;&gt;&lt;li&gt;&lt;span id=&quot;azure-mqtt-ssl&quot;&gt;[1]“Azure IoT Hub communication protocols and ports | Microsoft Docs.” \urlhttps://docs.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-protocols.&lt;/span&gt;&lt;/li&gt;
+&lt;li&gt;&lt;span id=&quot;aws-mqtt-ssl&quot;&gt;[2]“Protocols - AWS IoT.” \urlhttps://docs.aws.amazon.com/iot/latest/developerguide/protocols.html.&lt;/span&gt;&lt;/li&gt;
+&lt;li&gt;&lt;span id=&quot;gc-mqtt-ssl&quot;&gt;[3]“Publishing over the MQTT bridge  |  Cloud IoT Core Documentation  |  Google Cloud.” \urlhttps://cloud.google.com/iot/docs/how-tos/mqtt-bridge#mqtt_server.&lt;/span&gt;&lt;/li&gt;&lt;/ul&gt;</content><author><name>fatih</name></author><category term="iot" /><category term="security" /><summary type="html">Securing low power IoT devices is very resource consuming. Do we need lighter primitives?</summary></entry></feed>
