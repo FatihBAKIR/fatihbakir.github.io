@@ -1,0 +1,51 @@
+# Welcome to Jekyll!
+#
+# This config file is meant for settings that affect your whole blog, values
+# which you are expected to set up once and rarely edit after that. If you find
+# yourself editing this file very often, consider using Jekyll's data files
+# feature for the data you need to update frequently.
+#
+# For technical reasons, this file is *NOT* reloaded automatically when you use
+# 'bundle exec jekyll serve'. If you change this file, please restart the server process.
+
+# Site settings
+# These are used to personalize your new site. If you look in the HTML files,
+# you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
+# You can create any custom variable you would like, and they will be accessible
+# in the templates via {{ site.myvariable }}.
+title: Fatih's blog
+email: ~
+description: >- # this means to ignore newlines until "baseurl:"
+  Blog 
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "https://blog.fatihbakir.net" # the base hostname & protocol for your site, e.g. http://example.com
+twitter_username: mfatihbakir
+github_username:  FatihBAKIR
+authors:
+  fatih:
+    name: Fatih Bakir
+    image: https://gravatar.com/avatar/35df13054d8d9aef497eaba29e97d087
+    email: mfatihbakir@gmail.com
+
+
+show_excerpts: True
+
+sass:
+  style: compressed
+
+# Build settings
+markdown: kramdown
+
+plugins:
+  - jekyll-feed
+  - jekyll-asciidoc
+  - jekyll-seo-tag
+  - jekyll/scholar
+
+kramdown:
+  parse_block_html: true
+
+scholar:
+  style: ieee
+  use_raw_bibtex_entry: false
+  bibliography_list_tag: ul

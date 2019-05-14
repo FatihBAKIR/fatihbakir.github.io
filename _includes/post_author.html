@@ -1,0 +1,10 @@
+{% assign author = site.authors[page.author] %}
+
+
+{% if author.image %}
+  <img src="{{ author.image }}" class="onbellek-post-author-image"/>
+{% endif %}
+
+{% if author.name %}
+  <span class="onbellek-post-author-name"> {{ author.name }} </span>
+{% endif %}

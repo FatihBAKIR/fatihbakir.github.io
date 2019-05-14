@@ -1,0 +1,18 @@
+@import url(https://cdn.jsdelivr.net/gh/tonsky/FiraCode@1.206/distr/fira_code.css);
+
+.onbellek-post-author-image {
+	height: 20px;
+}
+
+.highlight, code { font-family: 'Fira Code Retina'; }
+
+blockquote {
+	border-left: 0px solid #ccc;
+
+	.quotation{
+		font-size: 18px;
+		quotes: "\201C""\201D""\2018""\2019";
+		padding: 0px 20px;
+		line-height: 1;
+	  }	
+}
