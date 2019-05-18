@@ -1,4 +1,66 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="https://blog.fatihbakir.net/feed.xml" rel="self" type="application/atom+xml" /><link href="https://blog.fatihbakir.net/" rel="alternate" type="text/html" /><updated>2019-05-17T23:11:57-07:00</updated><id>https://blog.fatihbakir.net/feed.xml</id><title type="html">Fatih’s blog</title><subtitle>Blog </subtitle><entry><title type="html">SSL considered harmful (in IoT)?</title><link href="https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful.html" rel="alternate" type="text/html" title="SSL considered harmful (in IoT)?" /><published>2019-05-15T00:00:00-07:00</published><updated>2019-05-15T00:00:00-07:00</updated><id>https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful</id><content type="html" xml:base="https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful.html">&lt;p&gt;I’ve been working on &lt;em&gt;Internet of Things&lt;/em&gt; research for over a year now. The bulk of it has been
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.5">Jekyll</generator><link href="https://blog.fatihbakir.net/feed.xml" rel="self" type="application/atom+xml" /><link href="https://blog.fatihbakir.net/" rel="alternate" type="text/html" /><updated>2019-05-18T00:12:47-07:00</updated><id>https://blog.fatihbakir.net/feed.xml</id><title type="html">Fatih’s blog</title><subtitle>Blog </subtitle><entry><title type="html">Are C++ Threads Preemptive?</title><link href="https://blog.fatihbakir.net/2019/05/18/std-thread.html" rel="alternate" type="text/html" title="Are C++ Threads Preemptive?" /><published>2019-05-18T00:00:00-07:00</published><updated>2019-05-18T00:00:00-07:00</updated><id>https://blog.fatihbakir.net/2019/05/18/std-thread</id><content type="html" xml:base="https://blog.fatihbakir.net/2019/05/18/std-thread.html">&lt;p&gt;Although we have a consensus on our desktops, servers and phones that an OS should provide preemptive threads, not all software is written for such environments and neither all operating systems support preemptive threads. I believe there’s a case for non-preemptive (or cooperative) threads in special applications. But that’s the topic of another article.&lt;/p&gt;
+
+&lt;p&gt;In this article, I’d like to see if the C++ standard allows for &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt;s to have cooperative semantics rather than preemptive.&lt;/p&gt;
+
+&lt;p&gt;All the &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt; implementations I have provide preemptive threads. This is expected however, as they are all for Win32 or POSIX interfaces, which themselves support preemptive threads. As far as I can see, there’s no &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt; implementation that provides cooperative threads in the wild.&lt;/p&gt;
+
+&lt;p&gt;So we have to dive into the standard to find our answer. The C++ standard &lt;a class=&quot;citation&quot; href=&quot;#cppstd&quot;&gt;[1]&lt;/a&gt; defines what a thread is as in [intro.multithread]:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;A thread of execution (also known as a thread) is a single flow of control within a program, including the initial invocation of a specific top-level function, and recursively including every function invocation subsequently executed by the thread.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;No mention of preemption, so we have to keep looking.&lt;/p&gt;
+
+&lt;p&gt;The next interesting information is in [intro.progress], which defines what making progress for a C++ thread means:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The implementation may assume that any thread will eventually do one of the following:&lt;/p&gt;
+  &lt;ul&gt;
+    &lt;li&gt;terminate,&lt;/li&gt;
+    &lt;li&gt;make a call to a library I/O function,&lt;/li&gt;
+    &lt;li&gt;perform an access through a volatile glvalue, or&lt;/li&gt;
+    &lt;li&gt;perform a synchronization operation or an atomic operation.&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;This is &lt;em&gt;somewhat&lt;/em&gt; more related to what we’re looking for, but is still not mentioning anything regarding preemption. The previous requirements can be made for both preemptive and cooperative threads.&lt;/p&gt;
+
+&lt;p&gt;However, something more interesting is in the 7th point:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;For a thread of execution providing concurrent forward progress guarantees, the implementation ensures that the thread will eventually make progress for as long as it has not terminated. [ Note: This is required regardless of whether or not other threads of executions (if any) have been or are making progress. To eventually fulfill this requirement means that this will happen in an unspecified but finite amount of time. — end note ]&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Making progress here means doing something that has visible effects, in a hand wavy way. The interesting bit is in the note however. It states that a thread must be able to make progress in a finite amount of time. Thus, I believe &lt;em&gt;it kind of&lt;/em&gt; follows that cooperative threads &lt;strong&gt;cannot provide&lt;/strong&gt; concurrent forward progress guarantees.&lt;/p&gt;
+
+&lt;p&gt;Imagine the following program:&lt;/p&gt;
+
+&lt;div class=&quot;language-cpp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;atomic&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;bool&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;b&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;false&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;auto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;t1&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;std&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;kr&quot;&gt;thread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;([]{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;!&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;});&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;auto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;t2&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;std&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;kr&quot;&gt;thread&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;([]{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;b&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;true&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;print&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;uart&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;foo&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;});&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If the first thread &lt;code class=&quot;highlighter-rouge&quot;&gt;t1&lt;/code&gt; starts executing first, it’ll be stuck in the loop forever, thus starving &lt;code class=&quot;highlighter-rouge&quot;&gt;t2&lt;/code&gt;. This means that &lt;code class=&quot;highlighter-rouge&quot;&gt;t2&lt;/code&gt; may not make progress in a finite amount of time. Providing such a guarantee is impossible without either implementing preemptive threads, or instrumenting atomic accesses (and volatiles?) to potentially yield.&lt;/p&gt;
+
+&lt;p&gt;However, the next bullet in the standard says the following:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;It is implementation-defined whether the implementation-created thread of execution that executes main ([basic.start.main]) and the threads of execution created by std::thread ([thread.thread.class]) provide concurrent forward progress guarantees. [ Note: General-purpose implementations should provide these guarantees. — end note ]&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;This states that if &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt;s provide concurrent forward progress guarantee or not is implementation defined. So, if I’m implementing the &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt;, I don’t really have to do preemptive threads. A cooperative thread is certainly a standard conforming implementation.&lt;/p&gt;
+
+&lt;p&gt;However, the point of implementing the &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt; API would be to ease the effort of porting programs to such an OS. I don’t have any data on this, but I’m pretty certain most (&amp;gt;90% ?) &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt; usage assumes a preemptive threading model. Thus, supporting such programs would probably give a false sense of portability and would cause a lot of misunderstandings. Thus, I don’t believe cooperative threads should implement a &lt;code class=&quot;highlighter-rouge&quot;&gt;std::thread&lt;/code&gt; interface, even though it’s completely legal to do so.&lt;/p&gt;
+
+&lt;h2 id=&quot;references&quot;&gt;References&lt;/h2&gt;
+
+&lt;ul class=&quot;bibliography&quot;&gt;&lt;li&gt;&lt;span id=&quot;cppstd&quot;&gt;[1]“Draft C++ Standard.” \urlhttp://eel.is/c++draft/.&lt;/span&gt;&lt;/li&gt;&lt;/ul&gt;</content><author><name>fatih</name></author><category term="c++" /><category term="os" /><summary type="html">What does the standard say?</summary></entry><entry><title type="html">SSL considered harmful (in IoT)?</title><link href="https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful.html" rel="alternate" type="text/html" title="SSL considered harmful (in IoT)?" /><published>2019-05-15T00:00:00-07:00</published><updated>2019-05-15T00:00:00-07:00</updated><id>https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful</id><content type="html" xml:base="https://blog.fatihbakir.net/2019/05/15/ssl-considered-harmful.html">&lt;p&gt;I’ve been working on &lt;em&gt;Internet of Things&lt;/em&gt; research for over a year now. The bulk of it has been
 working on getting cheap installations to work reliably and securely.&lt;/p&gt;
 
 &lt;p&gt;It’s a known fact that security hasn’t been the top priority of IoT applications, whether it’s a
@@ -375,4 +437,4 @@ at runtime.&lt;/p&gt;
 &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
 &lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
 
-&lt;p&gt;When we enter an ISR, we’ll construct an &lt;code class=&quot;highlighter-rouge&quot;&gt;int_ctx&lt;/code&gt;, and pass that to the functions that expect interrupts to be turned off.&lt;/p&gt;</content><author><name>fatih</name></author><category term="c++" /><category term="embedded" /><category term="os" /><summary type="html">Ensuring atomic behaviour without wasting time</summary></entry></feed>
+&lt;p&gt;When we enter an ISR, we’ll construct an &lt;code class=&quot;highlighter-rouge&quot;&gt;int_ctx&lt;/code&gt;, and pass that to the functions that expect interrupts to be turned off.&lt;/p&gt;</content><author><name>fatih</name></author><category term="c++" /><category term="embedded" /><category term="os" /><summary type="html">Ensuring atomic behavior without wasting time</summary></entry></feed>

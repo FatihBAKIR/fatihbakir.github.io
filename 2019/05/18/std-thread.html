@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.0 -->
+<title>Are C++ Threads Preemptive? | Fatih’s blog</title>
+<meta name="generator" content="Jekyll v3.8.5" />
+<meta property="og:title" content="Are C++ Threads Preemptive?" />
+<meta name="author" content="fatih" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="What does the standard say?" />
+<meta property="og:description" content="What does the standard say?" />
+<link rel="canonical" href="https://blog.fatihbakir.net/2019/05/18/std-thread.html" />
+<meta property="og:url" content="https://blog.fatihbakir.net/2019/05/18/std-thread.html" />
+<meta property="og:site_name" content="Fatih’s blog" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-05-18T00:00:00-07:00" />
+<script type="application/ld+json">
+{"@type":"BlogPosting","url":"https://blog.fatihbakir.net/2019/05/18/std-thread.html","headline":"Are C++ Threads Preemptive?","dateModified":"2019-05-18T00:00:00-07:00","datePublished":"2019-05-18T00:00:00-07:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://blog.fatihbakir.net/2019/05/18/std-thread.html"},"author":{"@type":"Person","name":"fatih"},"description":"What does the standard say?","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="https://blog.fatihbakir.net/feed.xml" title="Fatih's blog" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">Fatih&#39;s blog</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        
+<article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Are C++ Threads Preemptive?</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2019-05-18T00:00:00-07:00" itemprop="datePublished">May 18, 2019
+      </time><!--<span itemprop="author" itemscope itemtype="http://schema.org/Person"><span class="p-author h-card" itemprop="name">fatih</span></span>-->
+          •
+
+
+
+  <img src="https://gravatar.com/avatar/35df13054d8d9aef497eaba29e97d087" class="onbellek-post-author-image"/>
+
+
+
+  <span class="onbellek-post-author-name"> Fatih Bakir </span>
+
+</p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>Although we have a consensus on our desktops, servers and phones that an OS should provide preemptive threads, not all software is written for such environments and neither all operating systems support preemptive threads. I believe there’s a case for non-preemptive (or cooperative) threads in special applications. But that’s the topic of another article.</p>
+
+<p>In this article, I’d like to see if the C++ standard allows for <code class="highlighter-rouge">std::thread</code>s to have cooperative semantics rather than preemptive.</p>
+
+<p>All the <code class="highlighter-rouge">std::thread</code> implementations I have provide preemptive threads. This is expected however, as they are all for Win32 or POSIX interfaces, which themselves support preemptive threads. As far as I can see, there’s no <code class="highlighter-rouge">std::thread</code> implementation that provides cooperative threads in the wild.</p>
+
+<p>So we have to dive into the standard to find our answer. The C++ standard <a class="citation" href="#cppstd">[1]</a> defines what a thread is as in [intro.multithread]:</p>
+
+<blockquote>
+  <p>A thread of execution (also known as a thread) is a single flow of control within a program, including the initial invocation of a specific top-level function, and recursively including every function invocation subsequently executed by the thread.</p>
+</blockquote>
+
+<p>No mention of preemption, so we have to keep looking.</p>
+
+<p>The next interesting information is in [intro.progress], which defines what making progress for a C++ thread means:</p>
+
+<blockquote>
+  <p>The implementation may assume that any thread will eventually do one of the following:</p>
+  <ul>
+    <li>terminate,</li>
+    <li>make a call to a library I/O function,</li>
+    <li>perform an access through a volatile glvalue, or</li>
+    <li>perform a synchronization operation or an atomic operation.</li>
+  </ul>
+</blockquote>
+
+<p>This is <em>somewhat</em> more related to what we’re looking for, but is still not mentioning anything regarding preemption. The previous requirements can be made for both preemptive and cooperative threads.</p>
+
+<p>However, something more interesting is in the 7th point:</p>
+
+<blockquote>
+  <p>For a thread of execution providing concurrent forward progress guarantees, the implementation ensures that the thread will eventually make progress for as long as it has not terminated. [ Note: This is required regardless of whether or not other threads of executions (if any) have been or are making progress. To eventually fulfill this requirement means that this will happen in an unspecified but finite amount of time. — end note ]</p>
+</blockquote>
+
+<p>Making progress here means doing something that has visible effects, in a hand wavy way. The interesting bit is in the note however. It states that a thread must be able to make progress in a finite amount of time. Thus, I believe <em>it kind of</em> follows that cooperative threads <strong>cannot provide</strong> concurrent forward progress guarantees.</p>
+
+<p>Imagine the following program:</p>
+
+<div class="language-cpp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">atomic</span><span class="o">&lt;</span><span class="kt">bool</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+<span class="k">auto</span> <span class="n">t1</span> <span class="o">=</span> <span class="n">std</span><span class="o">::</span><span class="kr">thread</span><span class="p">([]{</span>
+    <span class="k">while</span><span class="p">(</span><span class="o">!</span><span class="n">b</span><span class="p">);</span>
+<span class="p">});</span>
+<span class="k">auto</span> <span class="n">t2</span> <span class="o">=</span> <span class="n">std</span><span class="o">::</span><span class="kr">thread</span><span class="p">([]{</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+    <span class="n">print</span><span class="p">(</span><span class="n">uart</span><span class="p">,</span> <span class="s">"foo"</span><span class="p">);</span>
+<span class="p">});</span>
+</code></pre></div></div>
+
+<p>If the first thread <code class="highlighter-rouge">t1</code> starts executing first, it’ll be stuck in the loop forever, thus starving <code class="highlighter-rouge">t2</code>. This means that <code class="highlighter-rouge">t2</code> may not make progress in a finite amount of time. Providing such a guarantee is impossible without either implementing preemptive threads, or instrumenting atomic accesses (and volatiles?) to potentially yield.</p>
+
+<p>However, the next bullet in the standard says the following:</p>
+
+<blockquote>
+  <p>It is implementation-defined whether the implementation-created thread of execution that executes main ([basic.start.main]) and the threads of execution created by std::thread ([thread.thread.class]) provide concurrent forward progress guarantees. [ Note: General-purpose implementations should provide these guarantees. — end note ]</p>
+</blockquote>
+
+<p>This states that if <code class="highlighter-rouge">std::thread</code>s provide concurrent forward progress guarantee or not is implementation defined. So, if I’m implementing the <code class="highlighter-rouge">std::thread</code>, I don’t really have to do preemptive threads. A cooperative thread is certainly a standard conforming implementation.</p>
+
+<p>However, the point of implementing the <code class="highlighter-rouge">std::thread</code> API would be to ease the effort of porting programs to such an OS. I don’t have any data on this, but I’m pretty certain most (&gt;90% ?) <code class="highlighter-rouge">std::thread</code> usage assumes a preemptive threading model. Thus, supporting such programs would probably give a false sense of portability and would cause a lot of misunderstandings. Thus, I don’t believe cooperative threads should implement a <code class="highlighter-rouge">std::thread</code> interface, even though it’s completely legal to do so.</p>
+
+<h2 id="references">References</h2>
+
+<ul class="bibliography"><li><span id="cppstd">[1]“Draft C++ Standard.” \urlhttp://eel.is/c++draft/.</span></li></ul>
+
+  </div><a class="u-url" href="/2019/05/18/std-thread.html" hidden></a>
+</article>
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Fatih&#39;s blog</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Fatih&#39;s blog</li><li><a class="u-email" href="mailto:mfatihbakir@gmail.com">mfatihbakir@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/FatihBAKIR"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">FatihBAKIR</span></a></li><li><a href="https://www.twitter.com/mfatihbakir"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">mfatihbakir</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>Blog </p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
