@@ -1,8 +1,8 @@
 ---
 layout: post
-title:  "Please do not disturb"
+title:  Please do not disturb
 tags: c++ embedded os
-excerpt: Ensuring atomic behaviour without wasting time
+excerpt: Ensuring atomic behavior without wasting time
 published: true
 author: fatih
 ---
